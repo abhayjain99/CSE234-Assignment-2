@@ -1,0 +1,14 @@
+{
+  "base_model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "adapter": "LoRA",
+  "lora_r": 32,
+  "lora_alpha": 64,
+  "lora_dropout": 0.05,
+  "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+  "learning_rate": 0.0002,
+  "epochs": 6,
+  "batch_size": 1,
+  "gradient_accumulation_steps": 8,
+  "max_length": 2048,
+  "post_processing": "JSON extraction plus schema/case validation in main.py"
+}

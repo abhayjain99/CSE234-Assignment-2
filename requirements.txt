@@ -1,0 +1,11 @@
+torch
+transformers>=4.45
+accelerate
+peft
+trl
+datasets
+bitsandbytes
+rapidfireai
+scikit-learn
+sqlglot>=23.0
+tensorboard
