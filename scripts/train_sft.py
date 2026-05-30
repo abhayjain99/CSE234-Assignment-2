@@ -19,6 +19,7 @@ def main():
 
     from datasets import load_dataset
     from peft import LoraConfig
+    import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
     from trl import SFTConfig, SFTTrainer
 
@@ -53,6 +54,11 @@ def main():
     )
     model.config.use_cache = False
 
+    use_bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+    use_fp16 = torch.cuda.is_available() and not use_bf16
+    precision = "bf16" if use_bf16 else "fp16" if use_fp16 else "fp32"
+    print(f"Training with {precision} precision")
+
     peft_config = LoraConfig(
         r=args.lora_r,
         lora_alpha=args.lora_alpha,
@@ -73,7 +79,8 @@ def main():
         eval_strategy="epoch",
         save_strategy="epoch",
         save_total_limit=2,
-        bf16=True,
+        bf16=use_bf16,
+        fp16=use_fp16,
         packing=False,
         report_to=["tensorboard"],
     )
