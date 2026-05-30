@@ -1,0 +1,15 @@
+# Training optimizer/scheduler state — not needed for inference
+adapter/optimizer.pt
+adapter/scheduler.pt
+
+# Generated prediction outputs
+preds*.json
+per_q*.csv
+
+# HuggingFace dataset cache files (regenerated automatically)
+data/**/cache-*.arrow
+
+# Python cache
+__pycache__/
+*.pyc
+.cache/
