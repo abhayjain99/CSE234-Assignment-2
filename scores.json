@@ -1,0 +1,22 @@
+[
+  {
+    "run": "r64-5ep",
+    "score": 0.54,
+    "config": {
+      "model": "Qwen/Qwen2.5-1.5B-Instruct",
+      "lora_r": 64,
+      "lora_alpha": 128,
+      "lora_dropout": 0.1,
+      "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
+      "learning_rate": 5e-5,
+      "epochs": 5,
+      "batch_size": 1,
+      "gradient_accumulation_steps": 4,
+      "max_seq_length": 2048,
+      "lr_scheduler": "cosine",
+      "warmup_ratio": 0.05,
+      "weight_decay": 0.01
+    },
+    "notes": "Best run so far. Improved from 0.52 baseline."
+  }
+]

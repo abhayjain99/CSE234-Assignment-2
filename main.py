@@ -28,7 +28,7 @@ import sys
 # ---------------------------------------------------------------------------
 
 def load_schema_as_dict(db_id: str, schemas_dir: str = "./schemas") -> dict:
-    """Return {table: [col, ...]} from a Spider-format schema file."""
+    """Return {table: [col, ...]} — used for post-processing only."""
     fname = db_id.replace(" ", "_").replace("/", "_") + ".json"
     path  = os.path.join(schemas_dir, fname)
     with open(path) as f:
@@ -42,8 +42,12 @@ def load_schema_as_dict(db_id: str, schemas_dir: str = "./schemas") -> dict:
 
 
 def serialize_schema(schema: dict) -> str:
-    """Compact serialization: TABLE(col1, col2, ...)  — one table per line."""
+    """Compact serialization: TABLE(col1, col2, ...) — one table per line."""
     return "\n".join(f"{t}({', '.join(cols)})" for t, cols in schema.items())
+
+
+def build_schema_text(db_id: str, schemas_dir: str) -> str:
+    return serialize_schema(load_schema_as_dict(db_id, schemas_dir))
 
 
 # ---------------------------------------------------------------------------
@@ -190,9 +194,9 @@ def run_inference(items: list, schemas_dir: str, base_model: str,
         prompts, schemas = [], []
 
         for item in batch:
-            schema = load_schema_as_dict(item["db_id"], schemas_dir)
-            schema_text = serialize_schema(schema)
-            prompt = build_prompt(item["question"], item["db_id"], schema_text, tokenizer)
+            schema      = load_schema_as_dict(item["db_id"], schemas_dir)
+            schema_text = build_schema_text(item["db_id"], schemas_dir)
+            prompt      = build_prompt(item["question"], item["db_id"], schema_text, tokenizer)
             prompts.append(prompt)
             schemas.append(schema)
 

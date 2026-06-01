@@ -138,19 +138,17 @@ def main():
 
     experiment = Experiment(experiment_name=args.experiment_name, mode="fit")
 
-    # -- LoRA configs to try --
-    lora_r16 = RFLoraConfig(
-        r=16, lora_alpha=32, lora_dropout=0.05,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"], bias="none",
-    )
-    lora_r32 = RFLoraConfig(
-        r=32, lora_alpha=64, lora_dropout=0.05,
+    # -- Single best config: r=64, alpha=128, lr=5e-5, QKVO --
+    peft_config = RFLoraConfig(
+        r=64, lora_alpha=128, lora_dropout=0.1,
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj"], bias="none",
     )
 
-    def _sft_cfg(lr):
-        return RFSFTConfig(
-            learning_rate=lr,
+    model_config = RFModelConfig(
+        model_name=args.model,
+        peft_config=List([peft_config]),
+        training_args=RFSFTConfig(
+            learning_rate=5e-5,
             lr_scheduler_type="cosine",
             per_device_train_batch_size=args.batch_size,
             per_device_eval_batch_size=args.batch_size,
@@ -163,32 +161,18 @@ def main():
             fp16=_USE_FP16,
             warmup_ratio=0.05,
             weight_decay=0.01,
-        )
+        ),
+        model_type="causal_lm",
+        model_kwargs={"device_map": "auto", "use_cache": False},
+        formatting_func=formatting_func,
+    )
 
-    def _model_cfg(lora_cfg, lr):
-        return RFModelConfig(
-            model_name=args.model,
-            peft_config=List([lora_cfg]),
-            training_args=_sft_cfg(lr),
-            model_type="causal_lm",
-            model_kwargs={"device_map": "auto", "use_cache": False},
-            formatting_func=formatting_func,
-        )
-
-    # Grid: 2 LoRA ranks x 2 learning rates = 4 configs
-    configs = List([
-        _model_cfg(lora_r16, 2e-4),
-        _model_cfg(lora_r16, 5e-5),
-        _model_cfg(lora_r32, 2e-4),
-        _model_cfg(lora_r32, 5e-5),
-    ])
-
-    config_group = RFGridSearch(configs=configs, trainer_type="SFT")
+    config_group = RFGridSearch(configs=List([model_config]), trainer_type="SFT")
 
     print(f"\nLaunching: {args.experiment_name}")
     print(f"  model={args.model}  epochs={args.epochs}  "
           f"batch={args.batch_size}x4={args.batch_size*4}  "
-          f"lr={args.lr}  max_len={args.max_seq_length}\n")
+          f"lr=5e-05  r=64  dropout=0.1  epochs={args.epochs}  max_len={args.max_seq_length}\n")
 
     # num_chunks=1: run each config to completion before swapping.
     # num_chunks=4 was slicing training into tiny fragments (only 19 steps/epoch).
