@@ -24,11 +24,11 @@ import sys
 
 
 # ---------------------------------------------------------------------------
-# Schema helpers  (copied here so main.py is self-contained)
+# Schema helpers  (must match format_data.py exactly)
 # ---------------------------------------------------------------------------
 
 def load_schema_as_dict(db_id: str, schemas_dir: str = "./schemas") -> dict:
-    """Return {table: [col, ...]} — used for post-processing only."""
+    """Return {table: [col, ...]} — used for post-processing / filter_to_schema."""
     fname = db_id.replace(" ", "_").replace("/", "_") + ".json"
     path  = os.path.join(schemas_dir, fname)
     with open(path) as f:
@@ -41,13 +41,86 @@ def load_schema_as_dict(db_id: str, schemas_dir: str = "./schemas") -> dict:
     return schema
 
 
-def serialize_schema(schema: dict) -> str:
-    """Compact serialization: TABLE(col1, col2, ...) — one table per line."""
-    return "\n".join(f"{t}({', '.join(cols)})" for t, cols in schema.items())
+def load_schema_with_keys(db_id: str, schemas_dir: str = "./schemas") -> dict:
+    """Return {table: {cols:[col,...], pk:set, fk:{col:ref_table}}}."""
+    fname = db_id.replace(" ", "_").replace("/", "_") + ".json"
+    path  = os.path.join(schemas_dir, fname)
+    with open(path) as f:
+        s = json.load(f)
+    tables = s["table_names_original"]
+    result = {t: {"cols": [], "pk": set(), "fk": {}} for t in tables}
+    col_list = []
+    for tidx, cname in s["column_names_original"]:
+        col_list.append((tidx, cname))
+        if tidx == -1:
+            continue
+        result[tables[tidx]]["cols"].append(cname)
+    for pk_idx in s.get("primary_keys", []):
+        if isinstance(pk_idx, list):
+            for sub in pk_idx:
+                if isinstance(sub, int) and sub < len(col_list):
+                    tidx, cname = col_list[sub]
+                    if tidx != -1:
+                        result[tables[tidx]]["pk"].add(cname)
+        elif isinstance(pk_idx, int) and pk_idx < len(col_list):
+            tidx, cname = col_list[pk_idx]
+            if tidx != -1:
+                result[tables[tidx]]["pk"].add(cname)
+    for fk_src, fk_dst in s.get("foreign_keys", []):
+        if fk_src < len(col_list) and fk_dst < len(col_list):
+            s_tidx, s_col = col_list[fk_src]
+            d_tidx, _ = col_list[fk_dst]
+            if s_tidx != -1 and d_tidx != -1:
+                result[tables[s_tidx]]["fk"][s_col] = tables[d_tidx]
+    return result
+
+
+def serialize_compact(schema_keys: dict, tables: list = None) -> str:
+    """TABLE(col*,col>RefTable,col) — no spaces, * = PK, >Table = FK."""
+    if tables is None:
+        tables = list(schema_keys.keys())
+    lines = []
+    for t in tables:
+        if t not in schema_keys:
+            continue
+        info = schema_keys[t]
+        parts = []
+        for col in info["cols"]:
+            marker = col
+            if col in info["pk"]:
+                marker += "*"
+            if col in info["fk"]:
+                marker += f">{info['fk'][col]}"
+            parts.append(marker)
+        lines.append(f"{t}({','.join(parts)})")
+    return "\n".join(lines)
+
+
+def prune_tables(question: str, schema_keys: dict) -> list:
+    """Keyword-match tables/columns to question, close over FK neighbours."""
+    q_words = set(re.findall(r"[a-z0-9]+", question.lower()))
+    relevant = set()
+    for table, info in schema_keys.items():
+        if set(re.findall(r"[a-z0-9]+", table.lower())) & q_words:
+            relevant.add(table)
+            continue
+        for col in info["cols"]:
+            if set(re.findall(r"[a-z0-9]+", col.lower())) & q_words:
+                relevant.add(table)
+                break
+    if not relevant:
+        return list(schema_keys.keys())
+    for t in list(relevant):
+        for ref_t in schema_keys[t]["fk"].values():
+            if ref_t in schema_keys:
+                relevant.add(ref_t)
+    return [t for t in schema_keys.keys() if t in relevant]
 
 
 def build_schema_text(db_id: str, schemas_dir: str) -> str:
-    return serialize_schema(load_schema_as_dict(db_id, schemas_dir))
+    """Compact schema for all tables."""
+    sk = load_schema_with_keys(db_id, schemas_dir)
+    return serialize_compact(sk)
 
 
 # ---------------------------------------------------------------------------
@@ -117,12 +190,9 @@ def extract_json(text: str) -> dict:
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = (
-    "You are a schema linking assistant for natural-language-to-SQL. "
-    "Given a database schema and a question, output ONLY a JSON object mapping "
-    "table names to the list of column names referenced by the question. "
-    "Tables referenced without specific columns (e.g. in COUNT(*)) must still "
-    "appear with an empty list. Use the exact casing shown in the schema. "
-    "Output valid JSON and nothing else."
+    "Schema linker: given a question and DB schema, output JSON {table:[columns]}. "
+    "Include tables used without specific columns as {table:[]}. "
+    "Use exact schema casing. Output JSON only."
 )
 
 
@@ -134,13 +204,12 @@ def build_prompt(question: str, db_id: str, schema_text: str,
         {
             "role": "user",
             "content": (
-                f"Database: {db_id}\n\n"
-                f"Schema:\n{schema_text}\n\n"
-                f"Question: {question}"
+                f"Q: {question}\n\n"
+                f"DB: {db_id}\n"
+                f"Schema:\n{schema_text}"
             ),
         },
     ]
-    # apply_chat_template adds the trailing assistant prefix automatically
     return tokenizer.apply_chat_template(
         messages,
         tokenize=False,

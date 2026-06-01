@@ -48,17 +48,14 @@ def formatting_func(row):
     when RapidFire pickles and ships it to a worker subprocess.
     """
     system_prompt = (
-        "You are a schema linking assistant for natural-language-to-SQL. "
-        "Given a database schema and a question, output ONLY a JSON object mapping "
-        "table names to the list of column names referenced by the question. "
-        "Tables referenced without specific columns (e.g. in COUNT(*)) must still "
-        "appear with an empty list. Use the exact casing shown in the schema. "
-        "Output valid JSON and nothing else."
+        "Schema linker: given a question and DB schema, output JSON {table:[columns]}. "
+        "Include tables used without specific columns as {table:[]}. "
+        "Use exact schema casing. Output JSON only."
     )
     user_content = (
-        f"Database: {row['db_id']}\n\n"
-        f"Schema:\n{row['schema_text']}\n\n"
-        f"Question: {row['question']}"
+        f"Q: {row['question']}\n\n"
+        f"DB: {row['db_id']}\n"
+        f"Schema:\n{row['schema_text']}"
     )
     return {
         "prompt": [

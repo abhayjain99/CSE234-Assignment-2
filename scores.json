@@ -2,6 +2,8 @@
   {
     "run": "r64-5ep",
     "score": 0.54,
+    "table_score": null,
+    "column_score": null,
     "config": {
       "model": "Qwen/Qwen2.5-1.5B-Instruct",
       "lora_r": 64,
@@ -17,6 +19,40 @@
       "warmup_ratio": 0.05,
       "weight_decay": 0.01
     },
-    "notes": "Best run so far. Improved from 0.52 baseline."
+    "schema_format": "TABLE(col1, col2)",
+    "notes": "Simple format, no pruning."
+  },
+  {
+    "run": "compact-noprun-r64-5ep",
+    "score": 0.6117,
+    "table_score": 0.6826,
+    "column_score": 0.5408,
+    "table_metrics": {
+      "precision": 0.6990,
+      "recall": 0.6815,
+      "f1": 0.6673
+    },
+    "column_metrics": {
+      "precision": 0.5766,
+      "recall": 0.5318,
+      "f1": 0.5141
+    },
+    "config": {
+      "model": "Qwen/Qwen2.5-1.5B-Instruct",
+      "lora_r": 64,
+      "lora_alpha": 128,
+      "lora_dropout": 0.1,
+      "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
+      "learning_rate": 5e-5,
+      "epochs": 5,
+      "batch_size": 1,
+      "gradient_accumulation_steps": 4,
+      "max_seq_length": 2048,
+      "lr_scheduler": "cosine",
+      "warmup_ratio": 0.05,
+      "weight_decay": 0.01
+    },
+    "schema_format": "TABLE(col*,col>RefTable) compact, question-first, PK/FK markers, no pruning",
+    "notes": "Best run. Compact format + question-first + PK/FK inline markers boosted both table and column scores."
   }
 ]
