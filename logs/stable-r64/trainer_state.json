@@ -1,0 +1,80 @@
+{
+  "epoch": 1.0,
+  "global_step": 38,
+  "max_steps": 38,
+  "logging_steps": 10,
+  "eval_steps": 500,
+  "save_steps": 500,
+  "train_batch_size": 1,
+  "num_train_epochs": 1,
+  "num_input_tokens_seen": 0,
+  "total_flos": 3438767902685184.0,
+  "log_history": [
+    {
+      "loss": 0.5002,
+      "grad_norm": 2.7452964782714844,
+      "learning_rate": 1.2108127956240183e-06,
+      "num_tokens": 109871.0,
+      "mean_token_accuracy": 0.517602552473545,
+      "epoch": 0.26578073089701,
+      "step": 10
+    },
+    {
+      "loss": 0.4893,
+      "grad_norm": 3.6086034774780273,
+      "learning_rate": 5.358983848622451e-07,
+      "num_tokens": 230180.0,
+      "mean_token_accuracy": 0.4565820336341858,
+      "epoch": 0.53156146179402,
+      "step": 20
+    },
+    {
+      "loss": 0.4749,
+      "grad_norm": 4.772550582885742,
+      "learning_rate": 1.223989362426785e-07,
+      "num_tokens": 343347.0,
+      "mean_token_accuracy": 0.4841213792562485,
+      "epoch": 0.7973421926910299,
+      "step": 30
+    },
+    {
+      "eval_loss": NaN,
+      "eval_runtime": 7.8596,
+      "eval_samples_per_second": 12.851,
+      "eval_steps_per_second": 12.851,
+      "eval_num_tokens": 431646.0,
+      "eval_mean_token_accuracy": 0.4729155384668029,
+      "epoch": 1.0,
+      "step": 38
+    },
+    {
+      "train_runtime": 65.7684,
+      "train_samples_per_second": 4.622,
+      "train_steps_per_second": 0.578,
+      "total_flos": 3438767902685184.0,
+      "train_loss": 0.4588674055902581,
+      "epoch": 1.0,
+      "step": 38
+    }
+  ],
+  "best_metric": null,
+  "best_global_step": null,
+  "best_model_checkpoint": null,
+  "is_local_process_zero": true,
+  "is_world_process_zero": true,
+  "is_hyper_param_search": false,
+  "trial_name": null,
+  "trial_params": null,
+  "stateful_callbacks": {
+    "TrainerControl": {
+      "args": {
+        "should_training_stop": false,
+        "should_epoch_stop": false,
+        "should_save": false,
+        "should_evaluate": false,
+        "should_log": false
+      },
+      "attributes": {}
+    }
+  }
+}
