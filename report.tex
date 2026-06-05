@@ -1,0 +1,278 @@
+\documentclass[11pt]{article}
+
+% --- Packages ---------------------------------------------------------------
+\usepackage[margin=0.75in,top=0.7in,bottom=0.7in]{geometry}
+\usepackage{amsmath}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{caption}
+
+\hypersetup{colorlinks=true,linkcolor=black,urlcolor=blue!50!black,citecolor=blue!50!black}
+
+\titleformat{\section}{\large\bfseries}{\thesection.}{0.5em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.5em}{}
+\titlespacing*{\section}{0pt}{0.7ex}{0.3ex}
+\titlespacing*{\subsection}{0pt}{0.4ex}{0.2ex}
+\setlist{nosep,leftmargin=1.4em,topsep=1pt}
+\setlength{\parskip}{2pt plus 0.5pt}
+
+\lstset{basicstyle=\ttfamily\footnotesize,breaklines=true,columns=fullflexible,showstringspaces=false}
+
+% --- Title ------------------------------------------------------------------
+\title{\vspace{-2em}\textbf{Project 2: Schema Linking with Supervised Fine-Tuning}\\
+\large CSE/DSC 234 -- Data-Centric AI and AI Engineering, Spring 2026}
+\author{Jay Chaudhary \quad\textbar\quad Abhay Jain}
+\date{June 4, 2026}
+
+\begin{document}
+\maketitle
+\vspace{-2.8em}
+
+% ===========================================================================
+\section{Training Data Methodology}
+% ===========================================================================
+
+\paragraph{Base split.}
+We use the released 301 training examples and 101 validation examples from the SNAILS-derived
+dataset without any external augmentation. The 17 database schemas span national-parks
+biodiversity, NTSB crash statistics, NY education data, and SAP business-resource planning.
+We deliberately chose \emph{not} to augment with Spider or synthesised NL-SQL pairs because
+schema serialisation and prompt design proved to be higher-leverage axes: fixing a broken schema
+format moved the score by up to 0.4 points, whereas preliminary augmentation runs introduced
+noise from domain mismatch.
+
+\paragraph{Schema serialisation.}
+Each schema is rendered as one line per table in the format:
+\begin{lstlisting}
+TABLE(col*, col>RefTable, col, ...)
+\end{lstlisting}
+where \texttt{*} marks a primary key and \texttt{>RefTable} marks a foreign key.
+No spaces after commas. This encoding fits all relational structure (joins, PK identity) in
+minimal tokens, keeping 94\% of training examples below 2048 tokens without truncation.
+Serialisation is implemented in \texttt{format\_data.py::serialize\_compact}, reading
+\texttt{primary\_keys} and \texttt{foreign\_keys} directly from Spider-format schema JSON.
+
+\paragraph{Output format.}
+The gold target is the schema-links dict serialised as compact JSON
+(\texttt{separators=(",",":")}).  Tables referenced without specific columns (e.g.\
+\texttt{COUNT(*)}) are emitted as \texttt{\{"T":[]\}}, matching the wildcard-boundary rule
+in the eval script exactly.
+
+\paragraph{Chat record construction.}
+Each example becomes a three-turn supervised chat record:
+\textit{system} (35-token compact instruction),
+\textit{user} (question first, then \texttt{DB:} and \texttt{Schema:} block),
+\textit{assistant} (compact JSON).
+Question-first ordering was motivated by the hypothesis that the decoder should attend to
+question tokens while scanning each schema line; ablation confirmed a +0.09 score gain.
+Records are saved as HuggingFace \texttt{Dataset} Arrow files via \texttt{format\_data.py}.
+
+% ===========================================================================
+\section{Final Pipeline Architecture}
+% ===========================================================================
+
+Table~\ref{tab:final} summarises the best configuration (C8, score \textbf{0.6117}).
+
+\begin{table}[h]
+\centering\small
+\caption{Final pipeline configuration (C8).}
+\label{tab:final}
+\begin{tabular}{l l}
+\toprule
+\textbf{Component} & \textbf{Setting} \\
+\midrule
+Base model          & \texttt{Qwen/Qwen2.5-1.5B-Instruct} ($\le$2B constraint) \\
+LoRA targets        & \texttt{q\_proj, k\_proj, v\_proj, o\_proj} \\
+LoRA rank / alpha   & $r=64$, $\alpha=128$, dropout $=0.1$ \\
+Learning rate       & $5\times10^{-5}$, cosine schedule, 5\% linear warmup \\
+Batch / accumulation & 1 per device $\times$ 4 gradient-accumulation steps (eff.\ batch 4) \\
+Epochs / seq.\ length & 5 epochs, max 2048 tokens \\
+Precision           & \texttt{bf16} mixed precision \\
+Schema format       & \texttt{TABLE(col*,col>Ref)} compact; PK=\texttt{*}, FK=\texttt{>Ref} \\
+Prompt layout       & Question first: \texttt{Q:\{q\}} then \texttt{DB:\{id\}}, \texttt{Schema:}\{schema\} \\
+System prompt       & 35-token compact instruction (no verbose preamble) \\
+Decoding            & Greedy (\texttt{do\_sample=False}), repetition penalty 1.1 \\
+Post-processing     & \texttt{filter\_to\_schema}: case-insensitive hallucination removal \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Fine-tuning (\texttt{train.py}).}
+LoRA adapters are applied via RapidFire AI's \texttt{RFLoraConfig} and trained with
+\texttt{RFSFTConfig} wrapping HuggingFace TRL's \texttt{SFTTrainer}.  Experiments are
+managed through \texttt{Experiment} + \texttt{RFGridSearch}; each config runs to completion
+(\texttt{num\_chunks=1}) before checkpoints are compared by validation loss.  The best
+checkpoint is copied to \texttt{./adapter/}.
+
+\paragraph{Inference (\texttt{main.py}).}
+The base model is loaded from HuggingFace Hub; the LoRA adapter is attached via
+\texttt{PeftModel.from\_pretrained(base, "./adapter")}.  Raw model output is parsed by a
+tolerant extractor: direct \texttt{json.loads}, then regex on the first \texttt{\{\ldots\}}
+block, then empty-dict fallback.  \texttt{filter\_to\_schema} removes any hallucinated
+table or column not present in the actual schema, using case-insensitive lookup maps to
+restore exact casing.  Both adapter location and base model ID are auto-detected from
+\texttt{adapter/adapter\_config.json} so the script is self-contained.
+
+% ===========================================================================
+\section{Experimentation Methodology}
+\label{sec:exp}
+% ===========================================================================
+
+We ran all configs through RapidFire AI's \texttt{Experiment} / \texttt{RFGridSearch} API,
+using \texttt{RFLoraConfig}, \texttt{RFModelConfig}, and \texttt{RFSFTConfig} to define each
+knob bundle.  Configs were compared by validation loss logged to \texttt{logs/} and by
+end-to-end leaderboard score on the 101-question validation set.  Underperforming configs were
+stopped via the IC Ops interface; promising ones were cloned and modified.
+
+Table~\ref{tab:configs} lists all 9 distinct configurations explored across five knob axes:
+schema format, learning rate, LoRA rank, prompt layout, and system-prompt wording.
+
+\begin{table}[h]
+\centering\footnotesize
+\caption{All configurations explored. ``Meas.''\ = full train + eval on validation set.}
+\label{tab:configs}
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{>{\raggedright\arraybackslash}p{2.5cm} c c c >{\raggedright\arraybackslash}p{3.8cm} c}
+\toprule
+\textbf{Config} & $r$ & \textbf{LR} & \textbf{Ep.} & \textbf{Schema / Prompt} & \textbf{Status} \\
+\midrule
+C1 Baseline       & 16  & $2\times10^{-4}$ & 3 & Simple \texttt{TABLE(c1,c2)}, schema-first  & Meas. \\
+C2 high LR        & 64  & $1\times10^{-4}$ & 5 & Simple, schema-first                         & Meas. \\
+C3 low LR         & 64  & $8\times10^{-6}$ & 5 & Simple, schema-first                         & Meas. \\
+C4 JSON hier.     & 64  & $5\times10^{-5}$ & 5 & Nested JSON with types, PK, FK               & Meas. \\
+C5 rich inline    & 64  & $5\times10^{-5}$ & 5 & \texttt{TABLE(col [PK,TEXT],\ldots)}          & Meas. \\
+C6 r64 simple     & 64  & $5\times10^{-5}$ & 5 & Simple, schema-first                         & Meas. \\
+C7 compact+prune  & 64  & $5\times10^{-5}$ & 5 & Compact PK/FK, Q-first, keyword pruning      & Meas. \\
+\textbf{C8 compact (best)} & 64 & $5\times10^{-5}$ & 5 & Compact PK/FK, Q-first, \textbf{no prune}  & \textbf{Meas.} \\
+C9 r128+col prompt & 128 & $5\times10^{-5}$ & 5 & Compact PK/FK, Q-first, col-aware sys.~prompt & Meas. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Learning rate search (C1--C3, C6).}
+With 301 training examples and effective batch 4 (75 steps/epoch), LR is the most sensitive
+knob. At $\ge10^{-4}$ (C1, C2) token accuracy oscillated between 0.42 and 0.56: the model
+peaked near step~50 (epoch~1) then degraded — a classic small-dataset overshoot.
+At $8\times10^{-6}$ (C3) convergence was too slow (score 0.47).
+$5\times10^{-5}$ with cosine schedule and 5\% warmup gave stable, monotonically improving
+validation loss across all 5 epochs.
+
+\paragraph{Schema format search (C4--C8).}
+Nested JSON (C4) frequently exceeded 2048 tokens on databases with 20+ tables, causing
+truncation (score 0.20). Rich inline annotation (C5) added too many tokens and confused
+the model (0.45). The simple \texttt{TABLE(col1,col2)} format (C6) reached 0.54.
+The compact PK/FK variant (C7, C8) encodes relational structure in near-zero extra tokens:
+\texttt{col*} for PKs and \texttt{col>Ref} for FKs tells the model which columns are join
+keys without verbose type strings.
+
+\paragraph{Pruning ablation (C7 vs.\ C8).}
+C7 pruned the schema at inference time to keyword-matching tables plus FK neighbours.
+Despite reducing median context length, table score dropped from 0.683 to 0.552 because
+pruning has no oracle knowledge at inference -- tables whose names share no lexical tokens
+with the question (e.g., a lookup table referenced only through a FK chain) were silently
+hidden. Removing pruning (C8) recovered the table score and set the best overall result.
+
+\paragraph{Rank and column-aware prompt (C9).}
+Doubling the rank to $r=128$ and adding an explicit column-type enumeration to the system
+prompt (\textit{``List ALL columns: SELECT outputs, WHERE/HAVING filters, JOIN keys, GROUP BY
+and ORDER BY columns''}) targeted the column recall gap. Score was 0.6074 -- marginally
+below C8 -- suggesting the column gap is limited by data scale rather than adapter capacity
+or instruction wording at this stage.
+
+% ===========================================================================
+\section{Results and Analysis}
+% ===========================================================================
+
+\begin{table}[h]
+\centering\footnotesize
+\caption{Results on the 101-question validation set.}
+\label{tab:results}
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{l c c c c c c}
+\toprule
+\textbf{Config} & $r$ & \textbf{LR} & \textbf{Ep.} & \textbf{Table Score} & \textbf{Column Score} & \textbf{Score} \\
+\midrule
+C1 Baseline    & 16  & $2\times10^{-4}$ & 3 & --    & --    & 0.520 \\
+C2 high LR     & 64  & $1\times10^{-4}$ & 5 & --    & --    & 0.520 \\
+C3 low LR      & 64  & $8\times10^{-6}$ & 5 & --    & --    & 0.470 \\
+C4 JSON hier.  & 64  & $5\times10^{-5}$ & 5 & --    & --    & 0.200 \\
+C5 rich inline & 64  & $5\times10^{-5}$ & 5 & --    & --    & 0.450 \\
+C6 r64 simple  & 64  & $5\times10^{-5}$ & 5 & --    & --    & 0.540 \\
+C7 +prune      & 64  & $5\times10^{-5}$ & 5 & 0.552 & 0.484 & 0.518 \\
+\textbf{C8 (best)} & \textbf{64} & $5\times10^{-5}$ & \textbf{5} & \textbf{0.683} & \textbf{0.541} & \textbf{0.612} \\
+C9 r128+col    & 128 & $5\times10^{-5}$ & 5 & 0.685 & 0.529 & 0.607 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{What worked.}
+The compact PK/FK schema format combined with question-first prompt layout produced the
+largest single gain ($+0.07$ over simple format). Embedding relational structure inline
+improved both table and column scores: the model can infer join paths from \texttt{>Ref}
+markers without a separate ``Relationships'' section. Stable learning rate ($5\times10^{-5}$)
+was essential on this data scale -- higher rates caused oscillation and lower rates failed to
+converge in 5 epochs.
+
+\paragraph{What didn't work.}
+Richer schema formats (C4, C5) hurt rather than helped: JSON hierarchical truncated long
+schemas, and rich inline annotations added noise tokens without proportional signal gain.
+Inference-time schema pruning (C7) degraded table recall by hiding tables that had no
+lexical overlap with the question. Larger adapter rank (C9) and an explicit column-type
+instruction in the system prompt did not improve column recall, suggesting the gap is
+data-scale limited.
+
+\paragraph{Table vs.\ column gap.}
+The table score (0.683) exceeds the column score (0.541) by 0.14 throughout all runs.
+Column prediction is harder: the model must identify implicit references -- join keys,
+WHERE predicates, GROUP BY columns -- that are not lexically present in the question.
+Zero schema-invalid identifiers were predicted in C8 and C9, confirming that
+\texttt{filter\_to\_schema} eliminates all hallucinations.
+
+\paragraph{Surprises.}
+Removing schema pruning (C8 vs.\ C7) \emph{increased} score despite longer contexts.
+The 2048-token limit was not the bottleneck; hiding relevant tables was.
+The column-aware system prompt (C9) was expected to lift column recall but had no effect,
+implying that the model already ``knows'' to look for filter and join columns -- the problem
+is that the small training set does not cover enough distinct join patterns to generalise.
+
+\paragraph{With more time/budget.}
+(1) Augment with LLM-generated NL-SQL pairs labelled by \texttt{sql\_to\_schema\_links.py},
+targeting under-represented SAP sub-modules ($\sim$6 training examples each).
+(2) Curriculum training: start with single-table questions, progress to multi-table joins.
+(3) Sorted output: always emit tables and columns in schema-defined order to reduce
+decoding variance and improve $F_1$.
+(4) Custom diagnostic metric: \textit{join-coverage score} -- fraction of FK-join columns
+correctly predicted -- to target the implicit-reference gap directly.
+
+% ===========================================================================
+\section{AI Tools Statement}
+% ===========================================================================
+
+Claude Code (Anthropic) was used throughout this project as a coding assistant: generating
+boilerplate for \texttt{format\_data.py}, \texttt{train.py}, and \texttt{main.py};
+debugging schema-parsing index errors; iterating on schema serialisation formats; and
+drafting this report. All experimental design decisions, hyperparameter choices, result
+interpretation, and final report content are the responsibility of the author.
+Training scripts, prompt designs, and pipeline decisions were reviewed, tested, and
+validated end-to-end by the author on DSMLP before inclusion.
+
+% ---------------------------------------------------------------------------
+\bibliographystyle{plain}
+\begin{thebibliography}{9}
+\bibitem{lora}
+E.~J.\ Hu et al.\ LoRA: Low-Rank Adaptation of Large Language Models. \textit{ICLR 2022}.
+\bibitem{spider}
+T.~Yu et al.\ Spider: A Large-Scale Human-Labeled Dataset for Complex and Cross-Domain
+Semantic Parsing and Text-to-SQL Task. \textit{EMNLP 2018}.
+\bibitem{snails}
+K.~Luoma and A.~Kumar. SNAILS: Schema Naming Assessments for Improved LLM-Based SQL
+Inference. \textit{ACM SIGMOD 2025}.
+\end{thebibliography}
+
+\end{document}

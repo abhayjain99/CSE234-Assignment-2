@@ -121,8 +121,10 @@ def build_schema_text(db_id: str, schemas_dir: str) -> str:
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = (
-    "Schema linker: given a question and DB schema, output JSON {table:[columns]}. "
-    "Include tables used without specific columns as {table:[]}. "
+    "Schema linker: given a question and DB schema, output JSON {table:[columns]}.\n"
+    "List ALL columns the question references: SELECT outputs, WHERE/HAVING filters, "
+    "JOIN keys, GROUP BY and ORDER BY columns.\n"
+    "Tables used without specific columns (e.g. COUNT(*)) get []. "
     "Use exact schema casing. Output JSON only."
 )
 
