@@ -22,6 +22,26 @@ import os
 import re
 import sys
 
+# Google Drive folder ID for adapter auto-download (if adapter/ missing locally)
+GDRIVE_ADAPTER_FOLDER_ID = "1z5wZUJkyM-2toPzq8JJ4_eIa1XvmPWfS"
+
+
+def maybe_download_adapter(adapter_path: str = "./adapter"):
+    """Download adapter from Google Drive if not present locally."""
+    if os.path.isdir(adapter_path) and os.path.exists(
+            os.path.join(adapter_path, "adapter_config.json")):
+        return  # already present
+    try:
+        import gdown
+        os.makedirs(adapter_path, exist_ok=True)
+        print(f"Adapter not found locally. Downloading from Google Drive → {adapter_path}/")
+        gdown.download_folder(id=GDRIVE_ADAPTER_FOLDER_ID, output=adapter_path, quiet=False)
+        print("  Download complete.")
+    except Exception as e:
+        print(f"  [WARN] GDrive download failed: {e}. Continuing without download.")
+
+
+
 
 # ---------------------------------------------------------------------------
 # Schema helpers  (must match format_data.py exactly)
@@ -228,6 +248,8 @@ def run_inference(items: list, schemas_dir: str, base_model: str,
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
     from peft import PeftModel
+
+    maybe_download_adapter(adapter_path)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Device: {device}")
