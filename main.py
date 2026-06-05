@@ -23,7 +23,7 @@ import re
 import sys
 
 # Google Drive folder ID for adapter auto-download (if adapter/ missing locally)
-GDRIVE_ADAPTER_FOLDER_ID = "1z5wZUJkyM-2toPzq8JJ4_eIa1XvmPWfS"
+GDRIVE_ADAPTER_FOLDER_ID = "1DIhKuHIX0VM0PN93BuBcvAQeFWwpcl2T"
 
 
 def maybe_download_adapter(adapter_path: str = "./adapter"):
@@ -210,10 +210,8 @@ def extract_json(text: str) -> dict:
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = (
-    "Schema linker: given a question and DB schema, output JSON {table:[columns]}.\n"
-    "List ALL columns the question references: SELECT outputs, WHERE/HAVING filters, "
-    "JOIN keys, GROUP BY and ORDER BY columns.\n"
-    "Tables used without specific columns (e.g. COUNT(*)) get []. "
+    "Schema linker: given a question and DB schema, output JSON {table:[columns]}. "
+    "Include tables used without specific columns as {table:[]}. "
     "Use exact schema casing. Output JSON only."
 )
 

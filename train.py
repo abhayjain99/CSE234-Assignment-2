@@ -48,10 +48,8 @@ def formatting_func(row):
     when RapidFire pickles and ships it to a worker subprocess.
     """
     system_prompt = (
-        "Schema linker: given a question and DB schema, output JSON {table:[columns]}.\n"
-        "List ALL columns the question references: SELECT outputs, WHERE/HAVING filters, "
-        "JOIN keys, GROUP BY and ORDER BY columns.\n"
-        "Tables used without specific columns (e.g. COUNT(*)) get []. "
+        "Schema linker: given a question and DB schema, output JSON {table:[columns]}. "
+        "Include tables used without specific columns as {table:[]}. "
         "Use exact schema casing. Output JSON only."
     )
     user_content = (
@@ -139,7 +137,7 @@ def main():
 
     # -- Single best config: r=64, alpha=128, lr=5e-5, QKVO --
     peft_config = RFLoraConfig(
-        r=128, lora_alpha=256, lora_dropout=0.1,
+        r=64, lora_alpha=128, lora_dropout=0.1,
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj"], bias="none",
     )
 
@@ -171,7 +169,7 @@ def main():
     print(f"\nLaunching: {args.experiment_name}")
     print(f"  model={args.model}  epochs={args.epochs}  "
           f"batch={args.batch_size}x4={args.batch_size*4}  "
-          f"lr=5e-05  r=128  alpha=256  dropout=0.1  max_len={args.max_seq_length}\n")
+          f"lr=5e-05  r=64  alpha=128  dropout=0.1  max_len={args.max_seq_length}\n")
 
     # num_chunks=1: run each config to completion before swapping.
     # num_chunks=4 was slicing training into tiny fragments (only 19 steps/epoch).
