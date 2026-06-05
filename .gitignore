@@ -13,3 +13,4 @@ data/**/cache-*.arrow
 __pycache__/
 *.pyc
 .cache/
+adapter/

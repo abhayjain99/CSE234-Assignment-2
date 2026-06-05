@@ -25,12 +25,12 @@ python eval.py --predictions preds.json \
 
 ## Model artifact
 
-- **Type:** LoRA adapter (PEFT)
-- **Location:** `adapter/` at repo root
-- **Base model:** `Qwen/Qwen2.5-1.5B-Instruct` (loaded automatically from HuggingFace Hub)
-- **Adapter size:** ~67 MB (committed to git)
+- **Type:** LoRA adapter (PEFT), r=64, alpha=128
+- **Storage:** Google Drive (auto-downloaded by `main.py` if `adapter/` is missing)
+- **Base model:** `Qwen/Qwen2.5-1.5B-Instruct` (loaded from HuggingFace Hub)
+- **Drive folder:** https://drive.google.com/drive/folders/1DIhKuHIX0VM0PN93BuBcvAQeFWwpcl2T
 
-`main.py` auto-detects the base model from `adapter/adapter_config.json` so no flags are needed.
+`main.py` checks for `adapter/` locally first; if missing, downloads from Google Drive automatically using `gdown`. No manual setup required.
 
 ---
 
