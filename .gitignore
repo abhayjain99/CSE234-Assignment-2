@@ -9,8 +9,17 @@ per_q*.csv
 # HuggingFace dataset cache files (regenerated automatically)
 data/**/cache-*.arrow
 
+# LaTeX build artifacts
+report.aux
+report.log
+report.out
+
+# Jupyter notebooks
+*.ipynb
+
 # Python cache
 __pycache__/
 *.pyc
 .cache/
 adapter/
+adapter_backup/
